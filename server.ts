@@ -19,17 +19,42 @@ const dbConfig = {
 };
 
 const app = express();
+import http from 'http';
+const server = http.createServer(app);
+import { Server } from "socket.io";
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"]
+  }});
 
 app.use(express.json()); //add body parser to each following route handler
 app.use(cors()) //add CORS support to each following route handler
 
-const client = new Client(dbConfig);
+
+const client = new Client("chatlog");
 client.connect();
 
-app.get("/", async (req, res) => {
-  const dbres = await client.query('select * from categories');
+io.on("connection", (socket) => {
+  console.log("a user connected");
+})
+
+app.get("/all", async (req, res) => {
+  const dbres = await client.query('select * from messages');
   res.json(dbres.rows);
 });
+
+app.post("/message", async (req, res) => {
+  try {
+    const message = req.body.message;
+    const dbres = await client.query('insert into messages(message) values($1) returning *', [message])
+    res.json(dbres.rows);
+    const allMessages = await client.query('select * from messages')
+    io.emit("messages updated", { allMessages: allMessages.rows});
+  } catch (error) {
+    console.error(error);
+  }
+})
 
 
 //Start the server on the given port
@@ -37,6 +62,6 @@ const port = process.env.PORT;
 if (!port) {
   throw 'Missing PORT environment variable.  Set it in .env file.';
 }
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`Server is up and running on port ${port}`);
 });
